@@ -1,0 +1,121 @@
+diff --git a/qemu-5.1.0/hw/usb/hcd-ohci.c b/qemu-5.1.0/hw/usb/hcd-ohci.c
+index 1e6e85e..6af2b17 100644
+--- a/qemu-5.1.0/hw/usb/hcd-ohci.c
++++ b/qemu-5.1.0/hw/usb/hcd-ohci.c
+@@ -37,6 +37,7 @@
+ #include "hw/qdev-properties.h"
+ #include "trace.h"
+ #include "hcd-ohci.h"
++#include "fuzz-seedpool.h"
+ 
+ /* This causes frames to occur 1000x slower */
+ //#define OHCI_TIME_WARP 1
+@@ -445,14 +446,14 @@ void ohci_hard_reset(OHCIState *ohci)
+ 
+ /* Get an array of dwords from main memory */
+ static inline int get_dwords(OHCIState *ohci,
+-                             dma_addr_t addr, uint32_t *buf, int num)
++                             dma_addr_t addr, uint32_t *buf, int num, uint32_t oid)
+ {
+     int i;
+ 
+     addr += ohci->localmem_base;
+ 
+     for (i = 0; i < num; i++, buf++, addr += sizeof(*buf)) {
+-        if (dma_memory_read(ohci->as, addr, buf, sizeof(*buf))) {
++        if (dma_memory_read(ohci->as, addr, buf, sizeof(*buf), oid)) {
+             return -1;
+         }
+         *buf = le32_to_cpu(*buf);
+@@ -481,14 +482,14 @@ static inline int put_dwords(OHCIState *ohci,
+ 
+ /* Get an array of words from main memory */
+ static inline int get_words(OHCIState *ohci,
+-                            dma_addr_t addr, uint16_t *buf, int num)
++                            dma_addr_t addr, uint16_t *buf, int num, uint32_t oid)
+ {
+     int i;
+ 
+     addr += ohci->localmem_base;
+ 
+     for (i = 0; i < num; i++, buf++, addr += sizeof(*buf)) {
+-        if (dma_memory_read(ohci->as, addr, buf, sizeof(*buf))) {
++        if (dma_memory_read(ohci->as, addr, buf, sizeof(*buf), oid)) {
+             return -1;
+         }
+         *buf = le16_to_cpu(*buf);
+@@ -516,29 +517,29 @@ static inline int put_words(OHCIState *ohci,
+ }
+ 
+ static inline int ohci_read_ed(OHCIState *ohci,
+-                               dma_addr_t addr, struct ohci_ed *ed)
++                               dma_addr_t addr, struct ohci_ed *ed, uint32_t oid)
+ {
+-    return get_dwords(ohci, addr, (uint32_t *)ed, sizeof(*ed) >> 2);
++    return get_dwords(ohci, addr, (uint32_t *)ed, sizeof(*ed) >> 2, oid);
+ }
+ 
+ static inline int ohci_read_td(OHCIState *ohci,
+-                               dma_addr_t addr, struct ohci_td *td)
++                               dma_addr_t addr, struct ohci_td *td, uint32_t oid)
+ {
+-    return get_dwords(ohci, addr, (uint32_t *)td, sizeof(*td) >> 2);
++    return get_dwords(ohci, addr, (uint32_t *)td, sizeof(*td) >> 2, oid);
+ }
+ 
+ static inline int ohci_read_iso_td(OHCIState *ohci,
+-                                   dma_addr_t addr, struct ohci_iso_td *td)
++                                   dma_addr_t addr, struct ohci_iso_td *td, uint32_t oid)
+ {
+-    return get_dwords(ohci, addr, (uint32_t *)td, 4) ||
+-           get_words(ohci, addr + 16, td->offset, 8);
++    return get_dwords(ohci, addr, (uint32_t *)td, 4, oid) ||
++           get_words(ohci, addr + 16, td->offset, 8, oid);
+ }
+ 
+ static inline int ohci_read_hcca(OHCIState *ohci,
+-                                 dma_addr_t addr, struct ohci_hcca *hcca)
++                                 dma_addr_t addr, struct ohci_hcca *hcca, uint32_t oid)
+ {
+     return dma_memory_read(ohci->as, addr + ohci->localmem_base,
+-                           hcca, sizeof(*hcca));
++                           hcca, sizeof(*hcca), oid);
+ }
+ 
+ static inline int ohci_put_ed(OHCIState *ohci,
+@@ -662,7 +663,7 @@ static int ohci_service_iso_td(OHCIState *ohci, struct ohci_ed *ed,
+ 
+     addr = ed->head & OHCI_DPTR_MASK;
+ 
+-    if (ohci_read_iso_td(ohci, addr, &iso_td)) {
++    if (ohci_read_iso_td(ohci, addr, &iso_td, 4)) {
+         trace_usb_ohci_iso_td_read_failed(addr);
+         ohci_die(ohci);
+         return 1;
+@@ -937,7 +938,7 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
+         trace_usb_ohci_td_skip_async();
+         return 1;
+     }
+-    if (ohci_read_td(ohci, addr, &td)) {
++    if (ohci_read_td(ohci, addr, &td, 3)) {
+         trace_usb_ohci_td_read_error(addr);
+         ohci_die(ohci);
+         return 1;
+@@ -1139,7 +1140,7 @@ static int ohci_service_ed_list(OHCIState *ohci, uint32_t head, int completion)
+         return 0;
+ 
+     for (cur = head; cur && link_cnt++ < ED_LINK_LIMIT; cur = next_ed) {
+-        if (ohci_read_ed(ohci, cur, &ed)) {
++        if (ohci_read_ed(ohci, cur, &ed, 2)) {
+             trace_usb_ohci_ed_read_error(cur);
+             ohci_die(ohci);
+             return 0;
+@@ -1231,7 +1232,7 @@ static void ohci_frame_boundary(void *opaque)
+     OHCIState *ohci = opaque;
+     struct ohci_hcca hcca;
+ 
+-    if (ohci_read_hcca(ohci, ohci->hcca, &hcca)) {
++    if (ohci_read_hcca(ohci, ohci->hcca, &hcca, 1)) {
+         trace_usb_ohci_hcca_read_error(ohci->hcca);
+         ohci_die(ohci);
+         return;

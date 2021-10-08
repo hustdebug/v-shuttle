@@ -1,0 +1,78 @@
+diff --git a/qemu-5.1.0/hw/usb/hcd-uhci.c b/qemu-5.1.0/hw/usb/hcd-uhci.c
+index 37f7beb..adca6df 100644
+--- a/qemu-5.1.0/hw/usb/hcd-uhci.c
++++ b/qemu-5.1.0/hw/usb/hcd-uhci.c
+@@ -39,6 +39,7 @@
+ #include "trace.h"
+ #include "qemu/main-loop.h"
+ #include "qemu/module.h"
++#include "fuzz-seedpool.h"
+ 
+ #define FRAME_TIMER_FREQ 1000
+ 
+@@ -675,9 +676,9 @@ static USBDevice *uhci_find_device(UHCIState *s, uint8_t addr)
+     return NULL;
+ }
+ 
+-static void uhci_read_td(UHCIState *s, UHCI_TD *td, uint32_t link)
++static void uhci_read_td(UHCIState *s, UHCI_TD *td, uint32_t link, uint32_t oid)
+ {
+-    pci_dma_read(&s->dev, link & ~0xf, td, sizeof(*td));
++    pci_dma_read(&s->dev, link & ~0xf, td, sizeof(*td), oid);
+     le32_to_cpus(&td->link);
+     le32_to_cpus(&td->ctrl);
+     le32_to_cpus(&td->token);
+@@ -846,7 +847,7 @@ static int uhci_handle_td(UHCIState *s, UHCIQueue *q, uint32_t qh_addr,
+              * may have added more tds to the queue. Note we re-read the td
+              * rather then caching it, as we want to see guest made changes!
+              */
+-            uhci_read_td(s, &last_td, last->td_addr);
++            uhci_read_td(s, &last_td, last->td_addr, 5);
+             uhci_queue_fill(async->queue, &last_td);
+ 
+             return TD_RESULT_ASYNC_CONT;
+@@ -888,7 +889,7 @@ static int uhci_handle_td(UHCIState *s, UHCIQueue *q, uint32_t qh_addr,
+     switch(pid) {
+     case USB_TOKEN_OUT:
+     case USB_TOKEN_SETUP:
+-        pci_dma_read(&s->dev, td->buffer, async->buf, max_len);
++        pci_dma_read(&s->dev, td->buffer, async->buf, max_len, 3);
+         usb_handle_packet(q->ep->dev, &async->packet);
+         if (async->packet.status == USB_RET_SUCCESS) {
+             async->packet.actual_length = max_len;
+@@ -983,7 +984,7 @@ static void uhci_queue_fill(UHCIQueue *q, UHCI_TD *td)
+     int ret;
+ 
+     while (is_valid(plink)) {
+-        uhci_read_td(q->uhci, &ptd, plink);
++        uhci_read_td(q->uhci, &ptd, plink, 6);
+         if (!(ptd.ctrl & TD_CTRL_ACTIVE)) {
+             break;
+         }
+@@ -1013,7 +1014,7 @@ static void uhci_process_frame(UHCIState *s)
+ 
+     frame_addr = s->fl_base_addr + ((s->frnum & 0x3ff) << 2);
+ 
+-    pci_dma_read(&s->dev, frame_addr, &link, 4);
++    pci_dma_read(&s->dev, frame_addr, &link, 4, 1);
+     le32_to_cpus(&link);
+ 
+     int_mask = 0;
+@@ -1051,7 +1052,7 @@ static void uhci_process_frame(UHCIState *s)
+                 }
+             }
+ 
+-            pci_dma_read(&s->dev, link & ~0xf, &qh, sizeof(qh));
++            pci_dma_read(&s->dev, link & ~0xf, &qh, sizeof(qh), 2);
+             le32_to_cpus(&qh.link);
+             le32_to_cpus(&qh.el_link);
+ 
+@@ -1068,7 +1069,7 @@ static void uhci_process_frame(UHCIState *s)
+         }
+ 
+         /* TD */
+-        uhci_read_td(s, &td, link);
++        uhci_read_td(s, &td, link, 4);
+         trace_usb_uhci_td_load(curr_qh & ~0xf, link & ~0xf, td.ctrl, td.token);
+ 
+         old_td_ctrl = td.ctrl;

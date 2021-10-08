@@ -1,0 +1,115 @@
+diff --git a/qemu-5.1.0/hw/usb/hcd-ehci.c b/qemu-5.1.0/hw/usb/hcd-ehci.c
+index 1495e8f..cb5b968 100644
+--- a/qemu-5.1.0/hw/usb/hcd-ehci.c
++++ b/qemu-5.1.0/hw/usb/hcd-ehci.c
+@@ -36,6 +36,7 @@
+ #include "qemu/error-report.h"
+ #include "qemu/main-loop.h"
+ #include "sysemu/runstate.h"
++#include "fuzz-seedpool.h"
+ 
+ #define FRAME_TIMER_FREQ 1000
+ #define FRAME_TIMER_NS   (NANOSECONDS_PER_SECOND / FRAME_TIMER_FREQ)
+@@ -372,7 +373,7 @@ static inline bool ehci_periodic_enabled(EHCIState *s)
+ 
+ /* Get an array of dwords from main memory */
+ static inline int get_dwords(EHCIState *ehci, uint32_t addr,
+-                             uint32_t *buf, int num)
++                             uint32_t *buf, int num, uint32_t oid)
+ {
+     int i;
+ 
+@@ -384,7 +385,7 @@ static inline int get_dwords(EHCIState *ehci, uint32_t addr,
+     }
+ 
+     for (i = 0; i < num; i++, buf++, addr += sizeof(*buf)) {
+-        dma_memory_read(ehci->as, addr, buf, sizeof(*buf));
++        dma_memory_read(ehci->as, addr, buf, sizeof(*buf), oid);
+         *buf = le32_to_cpu(*buf);
+     }
+ 
+@@ -482,9 +483,9 @@ static void ehci_writeback_async_complete_packet(EHCIPacket *p)
+ 
+     /* Verify the qh + qtd, like we do when going through fetchqh & fetchqtd */
+     get_dwords(q->ehci, NLPTR_GET(q->qhaddr),
+-               (uint32_t *) &qh, sizeof(EHCIqh) >> 2);
++               (uint32_t *) &qh, sizeof(EHCIqh) >> 2, 1);
+     get_dwords(q->ehci, NLPTR_GET(q->qtdaddr),
+-               (uint32_t *) &qtd, sizeof(EHCIqtd) >> 2);
++               (uint32_t *) &qtd, sizeof(EHCIqtd) >> 2, 2);
+     if (!ehci_verify_qh(q, &qh) || !ehci_verify_qtd(p, &qtd)) {
+         p->async = EHCI_ASYNC_INITIALIZED;
+         ehci_free_packet(p);
+@@ -1523,7 +1524,7 @@ static int ehci_state_waitlisthead(EHCIState *ehci,  int async)
+     /*  Find the head of the list (4.9.1.1) */
+     for(i = 0; i < MAX_QH; i++) {
+         if (get_dwords(ehci, NLPTR_GET(entry), (uint32_t *) &qh,
+-                       sizeof(EHCIqh) >> 2) < 0) {
++                       sizeof(EHCIqh) >> 2, 3) < 0) {
+             return 0;
+         }
+         ehci_trace_qh(NULL, NLPTR_GET(entry), &qh);
+@@ -1621,7 +1622,7 @@ static EHCIQueue *ehci_state_fetchqh(EHCIState *ehci, int async)
+     }
+ 
+     if (get_dwords(ehci, NLPTR_GET(q->qhaddr),
+-                   (uint32_t *) &qh, sizeof(EHCIqh) >> 2) < 0) {
++                   (uint32_t *) &qh, sizeof(EHCIqh) >> 2, 4) < 0) {
+         q = NULL;
+         goto out;
+     }
+@@ -1700,7 +1701,7 @@ static int ehci_state_fetchitd(EHCIState *ehci, int async)
+     entry = ehci_get_fetch_addr(ehci, async);
+ 
+     if (get_dwords(ehci, NLPTR_GET(entry), (uint32_t *) &itd,
+-                   sizeof(EHCIitd) >> 2) < 0) {
++                   sizeof(EHCIitd) >> 2, 5) < 0) {
+         return -1;
+     }
+     ehci_trace_itd(ehci, entry, &itd);
+@@ -1726,7 +1727,7 @@ static int ehci_state_fetchsitd(EHCIState *ehci, int async)
+     entry = ehci_get_fetch_addr(ehci, async);
+ 
+     if (get_dwords(ehci, NLPTR_GET(entry), (uint32_t *)&sitd,
+-                   sizeof(EHCIsitd) >> 2) < 0) {
++                   sizeof(EHCIsitd) >> 2, 6) < 0) {
+         return 0;
+     }
+     ehci_trace_sitd(ehci, entry, &sitd);
+@@ -1791,14 +1792,14 @@ static int ehci_state_fetchqtd(EHCIQueue *q)
+     uint32_t addr;
+ 
+     addr = NLPTR_GET(q->qtdaddr);
+-    if (get_dwords(q->ehci, addr +  8, &qtd.token,   1) < 0) {
++    if (get_dwords(q->ehci, addr +  8, &qtd.token,   1, 7) < 0) {
+         return 0;
+     }
+     barrier();
+-    if (get_dwords(q->ehci, addr +  0, &qtd.next,    1) < 0 ||
+-        get_dwords(q->ehci, addr +  4, &qtd.altnext, 1) < 0 ||
++    if (get_dwords(q->ehci, addr +  0, &qtd.next,    1, 8) < 0 ||
++        get_dwords(q->ehci, addr +  4, &qtd.altnext, 1, 9) < 0 ||
+         get_dwords(q->ehci, addr + 12, qtd.bufptr,
+-                   ARRAY_SIZE(qtd.bufptr)) < 0) {
++                   ARRAY_SIZE(qtd.bufptr), 10) < 0) {
+         return 0;
+     }
+     ehci_trace_qtd(q, NLPTR_GET(q->qtdaddr), &qtd);
+@@ -1888,7 +1889,7 @@ static int ehci_fill_queue(EHCIPacket *p)
+             }
+         }
+         if (get_dwords(q->ehci, NLPTR_GET(qtdaddr),
+-                       (uint32_t *) &qtd, sizeof(EHCIqtd) >> 2) < 0) {
++                       (uint32_t *) &qtd, sizeof(EHCIqtd) >> 2, 11) < 0) {
+             return -1;
+         }
+         ehci_trace_qtd(q, NLPTR_GET(qtdaddr), &qtd);
+@@ -2202,7 +2203,7 @@ static void ehci_advance_periodic_state(EHCIState *ehci)
+         }
+         list |= ((ehci->frindex & 0x1ff8) >> 1);
+ 
+-        if (get_dwords(ehci, list, &entry, 1) < 0) {
++        if (get_dwords(ehci, list, &entry, 1, 12) < 0) {
+             break;
+         }
+ 
