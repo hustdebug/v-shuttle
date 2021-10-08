@@ -24,7 +24,7 @@ make install
 
 - Move `memory.c` to QEMU_DIR/softmmu
 
-- Apply our [patches]() (such as hcd-ohci) to enable type awareness
+- Apply our [patches](https://github.com/hustdebug/v-shuttle/tree/main/V-Shuttle-S/QEMU-patch) (such as [hcd-ohci](https://github.com/hustdebug/v-shuttle/blob/main/V-Shuttle-S/QEMU-patch/hcd-ohci.patch)) to enable type awareness
 
 - Compile QEMU
 
