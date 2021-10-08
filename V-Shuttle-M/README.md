@@ -41,7 +41,7 @@ touch seed_file
 Take hcd-ohci as an exmaple
 
 ```bash
-../collect_seeds.sh
+./collect_seeds.sh
 ```
 
 ### 3. Fuzzing
