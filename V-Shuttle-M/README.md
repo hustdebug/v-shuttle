@@ -54,7 +54,7 @@ Take hcd-ohci as an exmaple
 
 ### Tips:
 1. Ignore the errors reported in AFL compilation ("Oops the instrumentation dose not seem to be behaving correctly"). This is because we selectively instrument virtual devices of hypervisor, so the demo program was not included.
-2. We suggest attaching `gdb` to the QEMU process when you run V-shuttle to fuzz the QEMU. If you run v-shuttle within a few minutes and encounter "unable to communicate with fork server (OOM?)", this is not surprising, which means that you have found the crash, and you can see the details of the crash in `gdb`. The reason is that our tool currently does not support to save complete test cases in persistent mode. If you encounter a crash, you may need to restart the fuzzing application again :(. Since crashes rarely occur in virtual devices, and each crash deserves detailed analysis, Therefore, we believe that this will not affect V-shuttle's ability to find vulnerabilities. Hope you have fun using V-shuttle.
+2. We suggest attaching `gdb` to the QEMU process when you run V-shuttle to fuzz the QEMU. If you run v-shuttle within a few minutes and encounter "unable to communicate with fork server (OOM?)", this is not surprising, which means that you have found the crash, and you can see the details of the crash in `gdb`. The reason is that our tool currently does not support to save complete test cases in persistent mode. If you encounter a crash, you may need to restart the fuzzing application again :(. Since crashes rarely occur in virtual devices, and each crash deserves detailed analysis. Therefore, we believe that this will not affect V-shuttle's ability to find vulnerabilities. Hope you have fun using V-shuttle.
 
 
 
