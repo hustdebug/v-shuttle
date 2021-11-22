@@ -11,10 +11,11 @@ Here, we provide [V-Shuttle-M](https://github.com/hustdebug/v-shuttle/v-shuttle-
 ### Citation:
 
 ```
-@article{pan2021v,
+@inproceedings{pan2021v,
   title={V-Shuttle: Scalable and Semantics-Aware Hypervisor Virtual Device Fuzzing},
   author={Pan, Gaoning and Lin, Xingwei and Zhang, Xuhong and Jia, Yongkang and Ji, Shouling and Wu, Chunming and Ying, Xinlei and Wang, Jiashui and Wu, Yanjun},
   booktitle={Proceedings of the 2021 ACM SIGSAC Conference on Computer and Communications Security},
+  pages={2197--2213},
   year={2021}
 }
 ```
