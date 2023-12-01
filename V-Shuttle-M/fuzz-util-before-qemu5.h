@@ -2,7 +2,6 @@
 #define FUZZ_UTIL_H
 #include "hook-write.h"
 #include "hw/pci/pci.h"
-#include "hw/pci/pci_device.h"
 #include "hw/dma/i8257.h"
 
 #define memory_region_init_io(mr, owner, ops, opaque, name, size); \
@@ -15,20 +14,20 @@
 #define isa_get_dma(bus, nchan) \
         hook_isa_get_dma(bus, nchan)
 
-#define pci_dma_map(dev, addr, plen, dir, attrs) \
-        hook_pci_dma_map(dev, addr, plen, dir, attrs)
+#define pci_dma_map(dev, addr, plen, dir) \
+        hook_pci_dma_map(dev, addr, plen, dir)
 
 #define pci_dma_unmap(dev, buffer, len, dir, access_len) \
         hook_pci_dma_unmap(dev, buffer, len, dir, access_len)
 
-#define dma_memory_read(as, addr, buf, size, attrs) \
-        hook_dma_memory_read(as, addr, buf, size, attrs)
+#define dma_memory_read(as, addr, buf, size) \
+        hook_dma_memory_read(as, addr, buf, size)
 
-#define pci_dma_read(dev, addr, buf, size, attrs) \
-        hook_pci_dma_read(dev, addr, buf, size, attrs)
+#define pci_dma_read(dev, addr, buf, size) \
+        hook_pci_dma_read(dev, addr, buf, size)
 
-#define dma_buf_read(ptr, len, residual, sg, attrs) \
-        hook_dma_buf_read(ptr, len, residual, sg, attrs)
+#define dma_buf_read(ptr, len, sg) \
+        hook_dma_buf_read(ptr, len, sg)
 
 #define address_space_read(as, addr, attrs, buf, size); \
         if(is_fuzzing()) {          \
@@ -200,7 +199,7 @@ void read_from_testcase(void *buf, size_t buf_size) {
 }
 
 void *hook_pci_dma_map(PCIDevice *dev, dma_addr_t addr,
-                                dma_addr_t *plen, DMADirection dir, MemTxAttrs attrs)
+                                dma_addr_t *plen, DMADirection dir)
 {
     if(is_fuzzing()) {
         void *buf = g_malloc0(*plen);
@@ -210,7 +209,7 @@ void *hook_pci_dma_map(PCIDevice *dev, dma_addr_t addr,
     } else {
         void *buf;
 
-        buf = dma_memory_map(pci_get_address_space(dev), addr, plen, dir, attrs);
+        buf = dma_memory_map(pci_get_address_space(dev), addr, plen, dir);
         return buf;
     }
 }
@@ -226,30 +225,30 @@ void hook_pci_dma_unmap(PCIDevice *dev, void *buffer, dma_addr_t len,
 }
 
 int hook_dma_memory_read(AddressSpace *as, dma_addr_t addr,
-                    const void *buf, dma_addr_t len, MemTxAttrs attrs) {
+                    const void *buf, dma_addr_t len) {
     if(is_fuzzing()) {          
         read_from_testcase(buf, len); 
     }else if(is_collecting()) { 
-        dma_memory_rw(as, addr, buf, len, DMA_DIRECTION_TO_DEVICE, attrs);
+        dma_memory_rw(as, addr, buf, len, DMA_DIRECTION_TO_DEVICE);
         write_seed_file(buf, len); 
     }
     return 0;
 }
 
 int hook_pci_dma_read(PCIDevice *dev, dma_addr_t addr,
-                               void *buf, dma_addr_t len, MemTxAttrs attrs)
+                               void *buf, dma_addr_t len)
 {
     if(is_fuzzing()) {          
         read_from_testcase(buf, len); 
     }else if(is_collecting()) { 
-        pci_dma_rw(dev, addr, buf, len, DMA_DIRECTION_TO_DEVICE, attrs);
+        pci_dma_rw(dev, addr, buf, len, DMA_DIRECTION_TO_DEVICE);
         write_seed_file(buf, len); 
     }
     return 0;
 }
 
-static uint64_t dma_buf_rw(uint8_t *ptr, int32_t len, dma_addr_t *residual, QEMUSGList *sg,
-                           DMADirection dir, MemTxAttrs attrs)
+static uint64_t dma_buf_rw(uint8_t *ptr, int32_t len, QEMUSGList *sg,
+                           DMADirection dir)
 {
     uint64_t resid;
     int sg_cur_index;
@@ -260,7 +259,7 @@ static uint64_t dma_buf_rw(uint8_t *ptr, int32_t len, dma_addr_t *residual, QEMU
     while (len > 0) {
         ScatterGatherEntry entry = sg->sg[sg_cur_index++];
         int32_t xfer = MIN(len, entry.len);
-        dma_memory_rw(sg->as, entry.base, ptr, xfer, dir, attrs);
+        dma_memory_rw(sg->as, entry.base, ptr, xfer, dir);
         ptr += xfer;
         len -= xfer;
         resid -= xfer;
@@ -269,14 +268,14 @@ static uint64_t dma_buf_rw(uint8_t *ptr, int32_t len, dma_addr_t *residual, QEMU
     return resid;
 }
 
-uint64_t hook_dma_buf_read(uint8_t *ptr, int32_t len, dma_addr_t *residual, QEMUSGList *sg, MemTxAttrs attrs)
+uint64_t hook_dma_buf_read(uint8_t *ptr, int32_t len, QEMUSGList *sg)
 {
     if(is_fuzzing()) {          
         read_from_testcase(ptr, len); 
     }else if(is_collecting()) { 
         write_seed_file(ptr, len); 
     }
-    return dma_buf_rw(ptr, len, residual, sg, DMA_DIRECTION_FROM_DEVICE, attrs);
+    return dma_buf_rw(ptr, len, sg, DMA_DIRECTION_FROM_DEVICE);
 }
 
 int hook_address_space_read(AddressSpace *as, hwaddr addr,
@@ -328,7 +327,7 @@ void fuzzing_entry(void) {
     _afl_stop();
     timer_mod(fuzz_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
     if(exec_times++>10000) {
-        __gcov_dump();
+        __gcov_flush();
         exec_times = 0;
     }
     return;
@@ -375,7 +374,7 @@ void isa_fuzzing_entry(void) {
     _afl_stop();
     timer_mod(isa_fuzz_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
     if(exec_times++>10000) {
-        __gcov_dump();
+        __gcov_flush();
         exec_times = 0;
     }
     return;
